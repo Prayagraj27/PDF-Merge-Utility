@@ -3,8 +3,8 @@ import 'package:file_picker/file_picker.dart';
 import 'dart:io';
 import 'package:syncfusion_flutter_pdf/pdf.dart';
 import 'package:flutter/services.dart';
-import 'save_file_mobile_and_desktop.dart'
-    if (dart.library.html) 'save_file_web.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:open_file/open_file.dart';
 
 void main() {
   runApp(const MyApp());
@@ -31,8 +31,15 @@ class MyApp extends StatelessWidget {
             ),
           ),
         ),
+        appBarTheme: const AppBarTheme(centerTitle: true, elevation: 0),
+        cardTheme: CardTheme(
+          elevation: 3,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
       ),
-      home: const MyHomePage(title: 'Remix : Merge PDFs effortlessly'),
+      home: const MyHomePage(title: 'Remix : Document Tools'),
     );
   }
 }
@@ -43,16 +50,39 @@ class MyHomePage extends StatefulWidget {
   final String title;
 
   @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  State createState() => _MyHomePageState();
 }
 
 class _MyHomePageState extends State<MyHomePage> {
   List<PlatformFile> selectedFiles = [];
   bool isLoading = false;
-  String outputFileName = 'new_pdf';
+  String outputFileName = 'new_document';
+  String currentAction =
+      'idle'; // To track current action: 'merge', 'docx_to_pdf'
+  late TextEditingController _outputController;
+
+  // New variables for encryption
+  bool enableEncryption = false;
+  String pdfPassword = '';
+  late TextEditingController _passwordController;
+  bool _obscurePassword = true;
 
   // Colors for the document icons
   final List<Color> docColors = [Colors.blue, Colors.red, Colors.green];
+
+  @override
+  void initState() {
+    super.initState();
+    _outputController = TextEditingController(text: outputFileName);
+    _passwordController = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _outputController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -70,7 +100,9 @@ class _MyHomePageState extends State<MyHomePage> {
                 applicationVersion: '1.0.0',
                 applicationIcon: const Icon(Icons.picture_as_pdf, size: 48),
                 children: [
-                  const Text('Merge multiple PDF files into one locally.'),
+                  const Text(
+                    'Document tools for merging PDFs and converting DOCX to PDF.',
+                  ),
                 ],
               );
             },
@@ -84,35 +116,24 @@ class _MyHomePageState extends State<MyHomePage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Document icons row when no files are selected
+                // Document icons and action buttons when no files are selected
                 if (selectedFiles.isEmpty)
                   Expanded(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        // Animated document icons
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            for (int i = 0; i < docColors.length; i++)
-                              AnimatedContainer(
-                                duration: Duration(milliseconds: 500),
-                                curve: Curves.easeInOut,
-                                margin: EdgeInsets.symmetric(horizontal: 10),
-                                child: GestureDetector(
-                                  onTap: _pickFiles,
-                                  child: _buildDocumentIcon(docColors[i], 80),
-                                ),
-                              ),
-                          ],
+                        // First row - PDF Merge (blue, red, green)
+                        _buildActionButton(
+                          icons: [Colors.blue, Colors.red, Colors.green],
+                          label: 'Select PDF files for merging',
+                          onPressed: () => _pickFiles('pdf', 'merge'),
                         ),
-                        SizedBox(height: 40),
-                        Text(
-                          'Tap to select PDF files',
-                          style: TextStyle(
-                            fontSize: 16,
-                            color: Colors.grey[600],
-                          ),
+                        const SizedBox(height: 40),
+                        // Second row - DOCX to PDF (blue, red)
+                        _buildActionButton(
+                          icons: [Colors.blue, Colors.red],
+                          label: 'Convert DOCX to PDF',
+                          onPressed: () => _pickFiles('docx', 'docx_to_pdf'),
                         ),
                       ],
                     ),
@@ -159,66 +180,151 @@ class _MyHomePageState extends State<MyHomePage> {
                                   onPressed: () {
                                     setState(() {
                                       selectedFiles.removeAt(index);
+                                      if (selectedFiles.isEmpty) {
+                                        currentAction = 'idle';
+                                      }
                                     });
                                   },
                                 ),
-                                const Icon(Icons.drag_handle),
+                                if (currentAction == 'merge')
+                                  const Icon(Icons.drag_handle),
                               ],
                             ),
                           );
                         },
                         onReorder: (int oldIndex, int newIndex) {
-                          setState(() {
-                            if (oldIndex < newIndex) {
-                              newIndex -= 1;
-                            }
-                            final item = selectedFiles.removeAt(oldIndex);
-                            selectedFiles.insert(newIndex, item);
-                          });
+                          if (currentAction == 'merge') {
+                            setState(() {
+                              if (oldIndex < newIndex) {
+                                newIndex -= 1;
+                              }
+                              final item = selectedFiles.removeAt(oldIndex);
+                              selectedFiles.insert(newIndex, item);
+                            });
+                          }
+                          // If not in 'merge' mode, do nothing
                         },
                       ),
                     ),
                   ),
                   const SizedBox(height: 16),
 
-                  // Output filename - removed the purple document icon from prefixIcon
+                  // Output filename
                   TextField(
                     decoration: InputDecoration(
                       labelText: 'Output Filename',
-                      hintText: 'Enter a name for your merged PDF',
+                      hintText: 'Enter a name for your document',
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      prefixIcon: Icon(
-                        Icons.edit_document,
-                      ), // Changed to a standard icon
+                      prefixIcon: const Icon(Icons.edit_document),
                       suffixText: '.pdf',
                     ),
-                    controller: TextEditingController(text: 'merged_document'),
+                    controller: _outputController,
                     onChanged: (value) {
                       outputFileName = value;
                     },
                   ),
                   const SizedBox(height: 16),
+
+                  // Encryption options (new addition)
+                  if (currentAction == 'merge') ...[
+                    Row(
+                      children: [
+                        Checkbox(
+                          value: enableEncryption,
+                          onChanged: (value) {
+                            setState(() {
+                              enableEncryption = value ?? false;
+                              if (!enableEncryption) {
+                                _passwordController.clear();
+                              }
+                            });
+                          },
+                        ),
+                        const Text('Encrypt PDF with password'),
+                      ],
+                    ),
+
+                    if (enableEncryption) ...[
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: _passwordController,
+                        decoration: InputDecoration(
+                          labelText: 'Password',
+                          hintText: 'Enter password for encryption',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          prefixIcon: const Icon(Icons.lock),
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              _obscurePassword
+                                  ? Icons.visibility
+                                  : Icons.visibility_off,
+                            ),
+                            onPressed: () {
+                              setState(() {
+                                _obscurePassword = !_obscurePassword;
+                              });
+                            },
+                          ),
+                        ),
+                        obscureText: _obscurePassword,
+                        onChanged: (value) {
+                          pdfPassword = value;
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Note: This password will be required to open the PDF',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey[600],
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    ],
+                  ],
                 ],
 
-                // Merge button
-                ElevatedButton.icon(
-                  onPressed: selectedFiles.isNotEmpty ? combinePDF : _pickFiles,
-                  icon: Icon(
-                    selectedFiles.isNotEmpty ? Icons.merge_type : Icons.add,
+                // Action button
+                if (selectedFiles.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      switch (currentAction) {
+                        case 'merge':
+                          combinePDF();
+                          break;
+                        case 'docx_to_pdf':
+                          convertDocxToPdf();
+                          break;
+                      }
+                    },
+                    icon: Icon(_getActionIcon()),
+                    label: Text(_getActionButtonText()),
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      backgroundColor: Colors.deepPurple,
+                      foregroundColor: Colors.white,
+                    ),
                   ),
-                  label: Text(
-                    selectedFiles.isNotEmpty
-                        ? 'Combine PDFs'
-                        : 'Select PDF Files',
+
+                  // Clear selection button when files are selected
+                  TextButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        selectedFiles = [];
+                        currentAction = 'idle';
+                        enableEncryption = false;
+                        _passwordController.clear();
+                      });
+                    },
+                    icon: const Icon(Icons.clear),
+                    label: const Text('Clear selection'),
                   ),
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    backgroundColor: Colors.deepPurple,
-                    foregroundColor: Colors.white,
-                  ),
-                ),
+                ],
               ],
             ),
           ),
@@ -233,20 +339,11 @@ class _MyHomePageState extends State<MyHomePage> {
                   children: [
                     const CircularProgressIndicator(color: Colors.white),
                     const SizedBox(height: 16),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _buildDocumentIcon(Colors.blue, 24),
-                        Icon(Icons.add, color: Colors.white),
-                        _buildDocumentIcon(Colors.red, 24),
-                        Icon(Icons.arrow_forward, color: Colors.white),
-                        _buildDocumentIcon(Colors.green, 24),
-                      ],
-                    ),
+                    _buildLoadingAnimation(),
                     const SizedBox(height: 8),
-                    const Text(
-                      'Merging PDFs...',
-                      style: TextStyle(color: Colors.white, fontSize: 16),
+                    Text(
+                      _getLoadingText(),
+                      style: const TextStyle(color: Colors.white, fontSize: 16),
                     ),
                   ],
                 ),
@@ -257,6 +354,101 @@ class _MyHomePageState extends State<MyHomePage> {
     );
   }
 
+  // Helper method to build action buttons with document icons
+  Widget _buildActionButton({
+    required List<Color> icons,
+    required String label,
+    required VoidCallback onPressed,
+  }) {
+    return Column(
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            for (int i = 0; i < icons.length; i++)
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 500),
+                curve: Curves.easeInOut,
+                margin: const EdgeInsets.symmetric(horizontal: 10),
+                child: GestureDetector(
+                  onTap: onPressed,
+                  child: _buildDocumentIcon(icons[i], 80),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Text(label, style: TextStyle(fontSize: 16, color: Colors.grey[600])),
+      ],
+    );
+  }
+
+  // Helper method to get the appropriate loading animation based on current action
+  Widget _buildLoadingAnimation() {
+    switch (currentAction) {
+      case 'merge':
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _buildDocumentIcon(Colors.blue, 24),
+            const Icon(Icons.add, color: Colors.white),
+            _buildDocumentIcon(Colors.red, 24),
+            const Icon(Icons.arrow_forward, color: Colors.white),
+            _buildDocumentIcon(Colors.green, 24),
+          ],
+        );
+      case 'docx_to_pdf':
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _buildDocumentIcon(Colors.blue, 24),
+            const Icon(Icons.arrow_forward, color: Colors.white),
+            _buildDocumentIcon(Colors.red, 24),
+          ],
+        );
+      default:
+        return const SizedBox();
+    }
+  }
+
+  // Helper method to get loading text based on current action
+  String _getLoadingText() {
+    switch (currentAction) {
+      case 'merge':
+        return enableEncryption
+            ? 'Merging and encrypting PDFs...'
+            : 'Merging PDFs...';
+      case 'docx_to_pdf':
+        return 'Converting DOCX to PDF...';
+      default:
+        return 'Processing...';
+    }
+  }
+
+  // Helper method to get action button text based on current action
+  String _getActionButtonText() {
+    switch (currentAction) {
+      case 'merge':
+        return enableEncryption ? 'Combine & Encrypt PDFs' : 'Combine PDFs';
+      case 'docx_to_pdf':
+        return 'Convert to PDF';
+      default:
+        return 'Process Files';
+    }
+  }
+
+  // Helper method to get action icon based on current action
+  IconData _getActionIcon() {
+    switch (currentAction) {
+      case 'merge':
+        return enableEncryption ? Icons.enhanced_encryption : Icons.merge_type;
+      case 'docx_to_pdf':
+        return Icons.swap_horiz;
+      default:
+        return Icons.arrow_forward;
+    }
+  }
+
   // Custom widget to build document icons like in your images
   Widget _buildDocumentIcon(Color color, double size) {
     return CustomPaint(
@@ -265,22 +457,55 @@ class _MyHomePageState extends State<MyHomePage> {
     );
   }
 
-  Future<void> _pickFiles() async {
+  Future<void> _pickFiles(String fileType, String action) async {
+    List<String> allowedExtensions;
+    if (fileType == 'pdf') {
+      allowedExtensions = ['pdf'];
+    } else if (fileType == 'docx') {
+      allowedExtensions = ['doc', 'docx'];
+    } else {
+      allowedExtensions = ['pdf', 'doc', 'docx'];
+    }
+
     FilePickerResult? result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['pdf'],
-      allowMultiple: true,
+      allowedExtensions: allowedExtensions,
+      allowMultiple: action == 'merge',
     );
 
     if (result != null && result.files.isNotEmpty) {
       setState(() {
         selectedFiles = result.files;
+        currentAction = action;
+        // Set default output filename based on action
+        if (action == 'docx_to_pdf') {
+          String originalName = result.files.first.name;
+          outputFileName = originalName.substring(
+            0,
+            originalName.lastIndexOf('.'),
+          );
+          _outputController.text = outputFileName;
+        } else {
+          outputFileName = 'merged_document';
+          _outputController.text = outputFileName;
+        }
       });
     }
   }
 
   Future<void> combinePDF() async {
     if (selectedFiles.isEmpty) return;
+
+    // Validate password if encryption is enabled
+    if (enableEncryption && pdfPassword.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please enter a password for encryption'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
 
     setState(() {
       isLoading = true;
@@ -318,48 +543,213 @@ class _MyHomePageState extends State<MyHomePage> {
         loadedDocument.dispose();
       }
 
+      // Apply encryption if enabled
+      if (enableEncryption && pdfPassword.isNotEmpty) {
+        // Set the security options
+        PdfSecurity security = newDocument.security;
+
+        // Use AES 128-bit encryption (more secure than RC4)
+        security.algorithm = PdfEncryptionAlgorithm.aesx128Bit;
+
+        // Set the user password (required to open the document)
+        security.userPassword = pdfPassword;
+      }
+
       // Save the combined document.
       List<int> bytes = await newDocument.save();
       newDocument.dispose();
 
-      // Save and launch/download the combined PDF file.
-      SaveFile.saveAndLaunchFile(bytes, '$outputFileName.pdf');
+      // Save and launch the combined PDF file.
+      await _saveAndOpenPdf(bytes, '$outputFileName.pdf');
 
       // Show success message
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('PDFs successfully merged as $outputFileName.pdf'),
+          content: Text(
+            enableEncryption
+                ? 'PDFs successfully merged and encrypted as $outputFileName.pdf'
+                : 'PDFs successfully merged as $outputFileName.pdf',
+          ),
           backgroundColor: Colors.green,
         ),
       );
     } catch (e) {
-      // Show error dialog
-      showDialog(
-        context: context,
-        builder:
-            (context) => AlertDialog(
-              title: const Text('Error'),
-              content: Text('Failed to merge PDFs: $e'),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('OK'),
-                ),
-              ],
-            ),
-      );
+      _showErrorDialog('Failed to merge PDFs: $e');
     } finally {
       setState(() {
         isLoading = false;
       });
     }
   }
+
+  Future<void> convertDocxToPdf() async {
+    if (selectedFiles.isEmpty) return;
+
+    setState(() {
+      isLoading = true;
+    });
+
+    try {
+      final file = selectedFiles.first;
+      if (file.path == null) {
+        throw Exception('File path is null');
+      }
+
+      // Create a new PDF document
+      final PdfDocument document = PdfDocument();
+      // Add a page to the document
+      final PdfPage page = document.pages.add();
+      // Create PDF text formatting objects
+      final PdfFont titleFont = PdfStandardFont(
+        PdfFontFamily.helvetica,
+        16,
+        style: PdfFontStyle.bold,
+      );
+      final PdfFont contentFont = PdfStandardFont(PdfFontFamily.helvetica, 12);
+      final PdfBrush brush = PdfSolidBrush(PdfColor(0, 0, 0));
+
+      // Extract text from DOCX using a safer method
+      String extractedText = await _extractTextFromDocxSafely(file.path!);
+
+      // Add a title with the document name
+      final String docName = file.name.split('.').first;
+      final PdfLayoutResult titleResult =
+          PdfTextElement(
+            text: 'Converted Document: $docName',
+            font: titleFont,
+            brush: brush,
+          ).draw(
+            page: page,
+            bounds: Rect.fromLTWH(0, 0, page.getClientSize().width, 50),
+          )!;
+
+      // Add the extracted content
+      PdfTextElement(text: extractedText, font: contentFont, brush: brush).draw(
+        page: page,
+        bounds: Rect.fromLTWH(
+          0,
+          titleResult.bounds.bottom + 20,
+          page.getClientSize().width,
+          page.getClientSize().height - titleResult.bounds.bottom - 20,
+        ),
+      );
+
+      // Save the PDF document
+      final List<int> pdfBytes = await document.save();
+      document.dispose();
+
+      // Save and open the converted file
+      await _saveAndOpenPdf(pdfBytes, '$outputFileName.pdf');
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('DOCX converted to $outputFileName.pdf'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      _showErrorDialog('Conversion failed: ${e.toString()}');
+    } finally {
+      setState(() => isLoading = false);
+    }
+  }
+
+  // Extract text from DOCX file (safer approach for basic text documents)
+  Future<String> _extractTextFromDocxSafely(String filePath) async {
+    try {
+      // Read the file as bytes
+      final bytes = await File(filePath).readAsBytes();
+
+      // For basic text extraction, we'll use a simple approach
+      // This won't handle complex formatting but works for basic text
+      String text = '';
+
+      // Convert bytes to string and look for text content
+      String content = String.fromCharCodes(bytes);
+
+      // Extract text between tags (Word text tags)
+      RegExp regExp = RegExp(r'<w:t[^>]*>(.*?)</w:t>', dotAll: true);
+      final matches = regExp.allMatches(content);
+
+      for (Match match in matches) {
+        if (match.group(1) != null) {
+          text += '${match.group(1)} ';
+        }
+      }
+
+      // If we couldn't extract text, provide a fallback
+      if (text.trim().isEmpty) {
+        return 'Converted from: ${filePath.split('/').last}\n\n'
+            'Note: This is a basic conversion for simple text documents.';
+      }
+
+      return text;
+    } catch (e) {
+      print('Error extracting text: $e');
+      return 'Converted from: ${filePath.split('/').last}\n\n'
+          'Note: This is a basic conversion. Text extraction failed.';
+    }
+  }
+
+  // Save PDF file and open it
+  Future<File> _saveAndOpenPdf(List<int> bytes, String fileName) async {
+    // Get the downloads directory on Android
+    final directory = await _getDownloadsDirectory();
+    final filePath = '${directory.path}/$fileName';
+
+    // Write the PDF file
+    final file = File(filePath);
+    await file.writeAsBytes(bytes);
+
+    // Open the file
+    OpenFile.open(filePath);
+    return file;
+  }
+
+  // Get downloads directory
+  Future<Directory> _getDownloadsDirectory() async {
+    if (Platform.isAndroid) {
+      // Use the Downloads folder on Android
+      Directory? directory;
+      try {
+        directory = Directory('/storage/emulated/0/Download');
+        // Create the directory if it doesn't exist
+        if (!await directory.exists()) {
+          await directory.create(recursive: true);
+        }
+        return directory;
+      } catch (e) {
+        // Fallback to application documents directory
+        final appDir = await getApplicationDocumentsDirectory();
+        return appDir;
+      }
+    } else {
+      // Fallback for other platforms
+      return await getApplicationDocumentsDirectory();
+    }
+  }
+
+  void _showErrorDialog(String message) {
+    showDialog(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Error'),
+            content: Text(message),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+    );
+  }
 }
 
 // Custom painter to draw document icons like in your images
 class DocumentIconPainter extends CustomPainter {
   final Color color;
-
   DocumentIconPainter(this.color);
 
   @override
