@@ -58,17 +58,12 @@ class _MyHomePageState extends State<MyHomePage> {
   List<PlatformFile> selectedFiles = [];
   bool isLoading = false;
   String outputFileName = 'new_document';
-  String currentAction =
-      'idle'; // To track current action: 'merge', 'docx_to_pdf'
+  String currentAction = 'idle';
   late TextEditingController _outputController;
-
-  // New variables for encryption
   bool enableEncryption = false;
   String pdfPassword = '';
   late TextEditingController _passwordController;
   bool _obscurePassword = true;
-
-  // Colors for the document icons
   final List<Color> docColors = [Colors.blue, Colors.red, Colors.green];
 
   @override
@@ -117,20 +112,17 @@ class _MyHomePageState extends State<MyHomePage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Document icons and action buttons when no files are selected
                 if (selectedFiles.isEmpty)
                   Expanded(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        // First row - PDF Merge (blue, red, green)
                         _buildActionButton(
                           icons: [Colors.blue, Colors.red, Colors.green],
                           label: 'Select PDF files for merging',
                           onPressed: () => _pickFiles('pdf', 'merge'),
                         ),
                         const SizedBox(height: 40),
-                        // Second row - DOCX to PDF (blue, red)
                         _buildActionButton(
                           icons: [Colors.blue, Colors.red],
                           label: 'Convert DOCX to PDF',
@@ -139,8 +131,6 @@ class _MyHomePageState extends State<MyHomePage> {
                       ],
                     ),
                   ),
-
-                // File list with colored document icons
                 if (selectedFiles.isNotEmpty) ...[
                   Text(
                     'Selected Files (${selectedFiles.length})',
@@ -159,7 +149,6 @@ class _MyHomePageState extends State<MyHomePage> {
                       child: ReorderableListView.builder(
                         itemCount: selectedFiles.length,
                         itemBuilder: (context, index) {
-                          // Use the colored document icons
                           return ListTile(
                             key: Key('$index'),
                             leading: _buildDocumentIcon(
@@ -203,14 +192,11 @@ class _MyHomePageState extends State<MyHomePage> {
                               selectedFiles.insert(newIndex, item);
                             });
                           }
-                          // If not in 'merge' mode, do nothing
                         },
                       ),
                     ),
                   ),
                   const SizedBox(height: 16),
-
-                  // Output filename
                   TextField(
                     decoration: InputDecoration(
                       labelText: 'Output Filename',
@@ -227,8 +213,6 @@ class _MyHomePageState extends State<MyHomePage> {
                     },
                   ),
                   const SizedBox(height: 16),
-
-                  // Encryption options (new addition)
                   if (currentAction == 'merge') ...[
                     Row(
                       children: [
@@ -246,7 +230,6 @@ class _MyHomePageState extends State<MyHomePage> {
                         const Text('Encrypt PDF with password'),
                       ],
                     ),
-
                     if (enableEncryption) ...[
                       const SizedBox(height: 8),
                       TextField(
@@ -288,8 +271,6 @@ class _MyHomePageState extends State<MyHomePage> {
                     ],
                   ],
                 ],
-
-                // Action button
                 if (selectedFiles.isNotEmpty) ...[
                   const SizedBox(height: 16),
                   ElevatedButton.icon(
@@ -311,8 +292,6 @@ class _MyHomePageState extends State<MyHomePage> {
                       foregroundColor: Colors.white,
                     ),
                   ),
-
-                  // Clear selection button when files are selected
                   TextButton.icon(
                     onPressed: () {
                       setState(() {
@@ -329,8 +308,6 @@ class _MyHomePageState extends State<MyHomePage> {
               ],
             ),
           ),
-
-          // Loading overlay
           if (isLoading)
             Container(
               color: Colors.black54,
@@ -355,7 +332,6 @@ class _MyHomePageState extends State<MyHomePage> {
     );
   }
 
-  // Helper method to build action buttons with document icons
   Widget _buildActionButton({
     required List<Color> icons,
     required String label,
@@ -384,7 +360,6 @@ class _MyHomePageState extends State<MyHomePage> {
     );
   }
 
-  // Helper method to get the appropriate loading animation based on current action
   Widget _buildLoadingAnimation() {
     switch (currentAction) {
       case 'merge':
@@ -412,7 +387,6 @@ class _MyHomePageState extends State<MyHomePage> {
     }
   }
 
-  // Helper method to get loading text based on current action
   String _getLoadingText() {
     switch (currentAction) {
       case 'merge':
@@ -426,7 +400,6 @@ class _MyHomePageState extends State<MyHomePage> {
     }
   }
 
-  // Helper method to get action button text based on current action
   String _getActionButtonText() {
     switch (currentAction) {
       case 'merge':
@@ -438,7 +411,6 @@ class _MyHomePageState extends State<MyHomePage> {
     }
   }
 
-  // Helper method to get action icon based on current action
   IconData _getActionIcon() {
     switch (currentAction) {
       case 'merge':
@@ -450,7 +422,6 @@ class _MyHomePageState extends State<MyHomePage> {
     }
   }
 
-  // Custom widget to build document icons like in your images
   Widget _buildDocumentIcon(Color color, double size) {
     return CustomPaint(
       size: Size(size, size * 1.3),
@@ -478,7 +449,6 @@ class _MyHomePageState extends State<MyHomePage> {
       setState(() {
         selectedFiles = result.files;
         currentAction = action;
-        // Set default output filename based on action
         if (action == 'docx_to_pdf') {
           String originalName = result.files.first.name;
           outputFileName = originalName.substring(
@@ -496,8 +466,6 @@ class _MyHomePageState extends State<MyHomePage> {
 
   Future<void> combinePDF() async {
     if (selectedFiles.isEmpty) return;
-
-    // Validate password if encryption is enabled
     if (enableEncryption && pdfPassword.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -507,63 +475,39 @@ class _MyHomePageState extends State<MyHomePage> {
       );
       return;
     }
-
     setState(() {
       isLoading = true;
     });
-
     try {
-      // Create a new PDF document.
       PdfDocument newDocument = PdfDocument();
       PdfSection? section;
-
       for (PlatformFile file in selectedFiles) {
         if (file.path == null) continue;
-
-        // Load the PDF document from the selected file path.
         PdfDocument loadedDocument = PdfDocument(
           inputBytes: File(file.path!).readAsBytesSync(),
         );
-
-        // Export the pages to the new document.
         for (int index = 0; index < loadedDocument.pages.count; index++) {
           PdfTemplate template = loadedDocument.pages[index].createTemplate();
-
           if (section == null || section.pageSettings.size != template.size) {
             section = newDocument.sections!.add();
             section.pageSettings.size = template.size;
             section.pageSettings.margins.all = 0;
           }
-
           section.pages.add().graphics.drawPdfTemplate(
             template,
             const Offset(0, 0),
           );
         }
-
         loadedDocument.dispose();
       }
-
-      // Apply encryption if enabled
       if (enableEncryption && pdfPassword.isNotEmpty) {
-        // Set the security options
         PdfSecurity security = newDocument.security;
-
-        // Use AES 128-bit encryption (more secure than RC4)
         security.algorithm = PdfEncryptionAlgorithm.aesx128Bit;
-
-        // Set the user password (required to open the document)
         security.userPassword = pdfPassword;
       }
-
-      // Save the combined document.
       List<int> bytes = await newDocument.save();
       newDocument.dispose();
-
-      // Save and launch the combined PDF file.
       await _saveAndOpenPdf(bytes, '$outputFileName.pdf');
-
-      // Show success message
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -585,22 +529,16 @@ class _MyHomePageState extends State<MyHomePage> {
 
   Future<void> convertDocxToPdf() async {
     if (selectedFiles.isEmpty) return;
-
     setState(() {
       isLoading = true;
     });
-
     try {
       final file = selectedFiles.first;
       if (file.path == null) {
         throw Exception('File path is null');
       }
-
-      // Create a new PDF document
       final PdfDocument document = PdfDocument();
-      // Add a page to the document
       final PdfPage page = document.pages.add();
-      // Create PDF text formatting objects
       final PdfFont titleFont = PdfStandardFont(
         PdfFontFamily.helvetica,
         16,
@@ -608,11 +546,7 @@ class _MyHomePageState extends State<MyHomePage> {
       );
       final PdfFont contentFont = PdfStandardFont(PdfFontFamily.helvetica, 12);
       final PdfBrush brush = PdfSolidBrush(PdfColor(0, 0, 0));
-
-      // Extract text from DOCX using a safer method
       String extractedText = await _extractTextFromDocxSafely(file.path!);
-
-      // Add a title with the document name
       final String docName = file.name.split('.').first;
       final PdfLayoutResult titleResult =
           PdfTextElement(
@@ -623,8 +557,6 @@ class _MyHomePageState extends State<MyHomePage> {
             page: page,
             bounds: Rect.fromLTWH(0, 0, page.getClientSize().width, 50),
           )!;
-
-      // Add the extracted content
       PdfTextElement(text: extractedText, font: contentFont, brush: brush).draw(
         page: page,
         bounds: Rect.fromLTWH(
@@ -634,14 +566,9 @@ class _MyHomePageState extends State<MyHomePage> {
           page.getClientSize().height - titleResult.bounds.bottom - 20,
         ),
       );
-
-      // Save the PDF document
       final List<int> pdfBytes = await document.save();
       document.dispose();
-
-      // Save and open the converted file
       await _saveAndOpenPdf(pdfBytes, '$outputFileName.pdf');
-
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('DOCX converted to $outputFileName.pdf'),
@@ -655,35 +582,22 @@ class _MyHomePageState extends State<MyHomePage> {
     }
   }
 
-  // Extract text from DOCX file (safer approach for basic text documents)
   Future<String> _extractTextFromDocxSafely(String filePath) async {
     try {
-      // Read the file as bytes
       final bytes = await File(filePath).readAsBytes();
-
-      // For basic text extraction, we'll use a simple approach
-      // This won't handle complex formatting but works for basic text
       String text = '';
-
-      // Convert bytes to string and look for text content
       String content = String.fromCharCodes(bytes);
-
-      // Extract text between tags (Word text tags)
       RegExp regExp = RegExp(r'<w:t[^>]*>(.*?)</w:t>', dotAll: true);
       final matches = regExp.allMatches(content);
-
       for (Match match in matches) {
         if (match.group(1) != null) {
           text += '${match.group(1)} ';
         }
       }
-
-      // If we couldn't extract text, provide a fallback
       if (text.trim().isEmpty) {
         return 'Converted from: ${filePath.split('/').last}\n\n'
             'Note: This is a basic conversion for simple text documents.';
       }
-
       return text;
     } catch (e) {
       print('Error extracting text: $e');
@@ -692,40 +606,29 @@ class _MyHomePageState extends State<MyHomePage> {
     }
   }
 
-  // Save PDF file and open it
   Future<File> _saveAndOpenPdf(List<int> bytes, String fileName) async {
-    // Get the downloads directory on Android
     final directory = await _getDownloadsDirectory();
     final filePath = '${directory.path}/$fileName';
-
-    // Write the PDF file
     final file = File(filePath);
     await file.writeAsBytes(bytes);
-
-    // Open the file
     OpenFile.open(filePath);
     return file;
   }
 
-  // Get downloads directory
   Future<Directory> _getDownloadsDirectory() async {
     if (Platform.isAndroid) {
-      // Use the Downloads folder on Android
       Directory? directory;
       try {
         directory = Directory('/storage/emulated/0/Download');
-        // Create the directory if it doesn't exist
         if (!await directory.exists()) {
           await directory.create(recursive: true);
         }
         return directory;
       } catch (e) {
-        // Fallback to application documents directory
         final appDir = await getApplicationDocumentsDirectory();
         return appDir;
       }
     } else {
-      // Fallback for other platforms
       return await getApplicationDocumentsDirectory();
     }
   }
@@ -748,7 +651,6 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 }
 
-// Custom painter to draw document icons like in your images
 class DocumentIconPainter extends CustomPainter {
   final Color color;
   DocumentIconPainter(this.color);
@@ -760,11 +662,9 @@ class DocumentIconPainter extends CustomPainter {
           ..color = color
           ..style = PaintingStyle.stroke
           ..strokeWidth = 2.0;
-
     final double width = size.width;
     final double height = size.height;
     final double cornerSize = width * 0.2;
-
     final Path path =
         Path()
           ..moveTo(0, 0)
@@ -773,32 +673,24 @@ class DocumentIconPainter extends CustomPainter {
           ..lineTo(width, height)
           ..lineTo(0, height)
           ..close();
-
-    // Draw the folded corner
     final Path cornerPath =
         Path()
           ..moveTo(width - cornerSize, 0)
           ..lineTo(width - cornerSize, cornerSize)
           ..lineTo(width, cornerSize)
           ..close();
-
-    // Draw lines inside the document
     final Paint linePaint =
         Paint()
           ..color = color
           ..style = PaintingStyle.stroke
           ..strokeWidth = 2.0
           ..strokeCap = StrokeCap.round;
-
     canvas.drawPath(path, paint);
     canvas.drawPath(cornerPath, paint);
-
-    // Draw the lines
     final double lineStartX = width * 0.2;
     final double lineEndX = width * 0.8;
     final double firstLineY = height * 0.3;
     final double lineSpacing = height * 0.1;
-
     for (int i = 0; i < 5; i++) {
       canvas.drawLine(
         Offset(lineStartX, firstLineY + (i * lineSpacing)),
